@@ -124,7 +124,7 @@
           "name": "View turns with steering"
         },
         "steer_look_angle": {
-          "desc": "How far the view turns at full steering lock",
+          "desc": "How far the view turns when the steering is turned fully",
           "name": "Steering view angle"
         },
         "steer_look_response": {
@@ -189,7 +189,7 @@
           "name": "Gamepad stick dead zone"
         },
         "stick_sens": {
-          "desc": "How far a small stick movement turns the wheel; pushing the stick fully still gives full lock",
+          "desc": "How far a small stick movement turns the wheel; pushing the stick all the way still gives full lock",
           "name": "Gamepad steering sensitivity"
         },
         "wheel_lock": {
@@ -365,10 +365,10 @@
         },
         "pax_pack": {
           "download": "Download",
-          "downloading": "Downloading. They are used from the next start of the game",
+          "downloading": "Downloading. Used from the next start of the game",
           "installed": "Installed",
-          "installing": "Installing. They are used from the next start of the game",
-          "missing": "Not downloaded yet; the \"Realistic\" passenger models need them",
+          "installing": "Installing. Used from the next start of the game",
+          "missing": "Not downloaded yet; needed for the \"Realistic\" passenger models",
           "name": "Realistic passenger models",
           "next_start": "Up to date. A game started before the download still has the old passengers",
           "outdated": "A newer version is available",
@@ -489,7 +489,8 @@
         "sound": "Sound",
         "vr": "VR",
         "head_tracking": "Head tracking",
-        "general": "General"
+        "general": "General",
+        "voice": "Voice chat"
       },
       "info": {
         "time": {
@@ -777,7 +778,7 @@
         },
         "window_mode": {
           "windowed": "Windowed",
-          "borderless": "Borderless",
+          "borderless": "Windowed Borderless",
           "fullscreen": "Fullscreen"
         },
         "post_aa": {
@@ -802,6 +803,47 @@
           "yaw roll": "Yaw and roll",
           "pitch roll": "Pitch and roll",
           "yaw pitch roll": "Yaw, pitch and roll"
+        },
+        "voice_mode": {
+          "ptt": "Push-to-talk (hold the key)",
+          "auto": "Voice activation"
+        }
+      },
+      "voice": {
+        "voice": {
+          "name": "Voice chat",
+          "desc": "Talk to the players near you in a multiplayer session"
+        },
+        "voice_mode": {
+          "name": "Talk",
+          "desc": "Hold the push-to-talk key (see the key bindings; with Shift: over the radio), or whenever you speak"
+        },
+        "mic": {
+          "name": "Microphone",
+          "desc": "Speak: the bar shows how loud you are, and the row lights up while the others hear you",
+          "default": "System default",
+          "off": "Turn the voice chat on to test the microphone"
+        },
+        "mic_gain": {
+          "name": "Microphone volume",
+          "desc": "How loud the others hear you"
+        },
+        "voice_sensitivity": {
+          "name": "Voice activation",
+          "desc": "Higher: quieter speech opens the microphone too"
+        },
+        "voice_denoise": {
+          "name": "Noise suppression",
+          "desc": "Filters the engine, the wind and the keyboard out of your microphone"
+        },
+        "vol_voice": {
+          "name": "Other players",
+          "desc": "How loud the others' voices are"
+        },
+        "pvol": {
+          "name": "Player",
+          "desc": "This player's voice (0: muted)",
+          "muted": "muted"
         }
       }
     },
@@ -979,13 +1021,21 @@
         "the_game_follows_your_device_s_date_and_time": "The game follows your device's date and time",
         "date_and_time": "Date and time",
         "synchronized_with_the_real_time": "Synchronized with the real time",
-        "exact_time": "Exact time",
+        "exact_time": "Current time",
         "press_enter_to_change_esc_to_cancel": "Press Enter to apply, Esc to cancel",
         "change_the_current_time_press_enter_to_change": "Change the current time (press Enter to apply)",
+        "exact_date": "Current date",
+        "change_the_current_date_press_enter_to_change": "Change the current date (press Enter to apply)",
         "hour": "Hour",
         "set_the_hour_of_the_day_directly": "Set the hour of the day directly",
         "minute": "Minute",
         "set_the_minute_directly": "Set the minute directly",
+        "day": "Day",
+        "set_the_day_directly": "Set the day directly",
+        "month": "Month",
+        "set_the_month_directly": "Set the month directly",
+        "year": "Year",
+        "set_the_year_directly": "Set the year directly",
         "morning": "Morning",
         "noon": "Noon",
         "evening": "Evening",
@@ -1067,8 +1117,19 @@
         "desc": "A controller that is switched off is ignored."
       },
       "axes": "Axes",
+      "axis_mode": {
+        "name": "Axis mode",
+        "desc": "Auto detects wheels and pedals. Gamepad uses sticks and triggers; Native uses the device's own axes.",
+        "auto": "Auto",
+        "gamepad": "Gamepad",
+        "native": "Native"
+      },
       "axis": {
         "desc": "What this axis does.",
+        "invert": {
+          "name": "Invert",
+          "desc": "Reverses this axis, even before a function is assigned."
+        },
         "name": {
           "0": "X axis",
           "1": "Y axis",
@@ -1225,7 +1286,7 @@
       "blinker_warn_toggle": "Hazard lights",
       "brake": "Brake",
       "bus_20h_switch": "20 h switch",
-      "bus_dooraft": "Rear doors",
+      "bus_dooraft": "Door release",
       "bus_doorfront0": "Front door 1",
       "bus_doorfront1": "Front door 2",
       "bus_doorfront5": "Front door 6",
@@ -1329,6 +1390,7 @@
       "ticket_give": "Issue ticket",
       "toggel_ctrler": "Switch controller",
       "toggel_mouse_ctrl": "Switch mouse control",
+      "toggle_navigator": "Show/hide navigator",
       "view_interiorcam_minus": "Interior camera: previous",
       "view_interiorcam_plus": "Interior camera: next",
       "view_reset_all_directions": "Reset all view directions",
@@ -1341,7 +1403,9 @@
       "view_set_schedule": "View: timetable",
       "view_set_ticketselling": "View: ticket sales",
       "view_toggle_informationdisplay": "Switch information display",
-      "view_toggle_viewpoint": "Switch viewpoint"
+      "view_toggle_viewpoint": "Switch viewpoint",
+      "voice_talk": "Multiplayer: talk (hold)",
+      "voice_radio": "Multiplayer: talk over the radio (hold)"
     },
     "keybinds": {
       "not_set": "Not set",
@@ -1375,7 +1439,11 @@
       "start_point_missing": "This start point could not be found",
       "destination": "Destination: {name}",
       "fleet_number": "Fleet number: {number}",
-      "key_conflict": "This key is already used by: {keys}"
+      "key_conflict": "This key is already used by: {keys}",
+      "voice_talking": "Voice: talking",
+      "voice_radio": "Voice: on the radio",
+      "voice_error": "Voice: {error}",
+      "voice_mic_denied": "the microphone is not allowed"
     },
     "admin": {
       "player": "Player {id}",
@@ -1414,7 +1482,10 @@
       "host_brought": "The host brought you here",
       "host_service": "The host ran a service: {kind}",
       "host_upright": "The host put your vehicle upright",
-      "wrong_password": "Wrong password"
+      "wrong_password": "Wrong password",
+      "mute": "Mute {name}'s microphone",
+      "unmute": "Let {name} speak again",
+      "voice": "Voice chat: {state}"
     }
   }
 }

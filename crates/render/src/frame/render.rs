@@ -152,6 +152,7 @@ impl Renderer {
         cursor_transforms: [Option<Mat4>; 2],
         navigator: Option<(TextureId, [Mat4; 2])>,
     ) {
+        self.flush_deferred();
         let Some(menu) = scene.overlays.get(menu_range) else {
             return;
         };
@@ -410,11 +411,4 @@ pub(crate) fn post_pass(
     pass.set_pipeline(pipeline);
     pass.set_bind_group(0, bg, &[]);
     pass.draw(0..3, 0..1);
-}
-
-pub(crate) fn draw_overlays(pass: &mut wgpu::RenderPass<'_>, scene: &Scene, count: usize) {
-    for (_, _, bg, _) in scene.overlay_res.iter().take(count) {
-        pass.set_bind_group(0, bg, &[]);
-        pass.draw(0..6, 0..1);
-    }
 }

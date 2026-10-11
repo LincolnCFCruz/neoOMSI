@@ -23,6 +23,20 @@ fn script_speed(speed_kmh: f32) -> f32 {
     }
 }
 
+/// Resolve a model text source by name or OMSI's numeric string-variable slot syntax.
+fn string_var_value<'a>(program: &Program, values: &'a [String], name: &str) -> &'a str {
+    let index = program.str_var(name).or_else(|| {
+        name.trim()
+            .parse::<usize>()
+            .ok()
+            .and_then(|i| u32::try_from(i).ok())
+    });
+    index
+        .and_then(|i| values.get(i as usize))
+        .map(String::as_str)
+        .unwrap_or("")
+}
+
 /// Built-in variables every road vehicle has (`program/varlist_roadvehicle.txt` + generated).
 pub fn builtin_vars(root: &Path) -> Vec<String> {
     let mut v: Vec<String> =
@@ -131,7 +145,7 @@ pub struct VehicleType {
     /// Axle numbers whose wheels the model moves with `Axle_Suspension_<n>_*`.
     pub suspension_axles: Vec<usize>,
     /// Other vehicle packs this one takes meshes from that are not installed (see
-    /// `::legacy_config::missing_vehicle_pack`), with how many meshes are missing for it.
+    /// `::mods::missing_vehicle_pack`), with how many meshes are missing for it.
     pub missing_packs: Vec<(String, usize)>,
     /// Per mesh: a sphere (centre, radius) around its vertices in the mesh's own frame, so
     /// that a ray (the mouse over the cockpit) can pass most meshes by without looking at a
@@ -162,7 +176,7 @@ pub fn load_paint_schemes(dir: &Path) -> Vec<PaintScheme> {
     let mut files: Vec<PathBuf> = Vec::new();
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
     // the folder in every content root (and mounted archive) that has it
-    for d in ::legacy_config::mirrored_dirs(dir) {
+    for d in ::mods::mirrored_dirs(dir) {
         let Some(list) = ::legacy_config::vfs::list_dir(&d) else {
             continue;
         };
@@ -234,11 +248,11 @@ pub fn load_paint_schemes(dir: &Path) -> Vec<PaintScheme> {
 /// game folder) - the first of the vehicle folder, its `model` folder and the game folder
 /// that has it. The model folder's spelling when none does, for the warning.
 fn mesh_path(root: &Path, dir: &Path, model_dir: &Path, file: &str) -> PathBuf {
-    let first = ::legacy_config::resolve_path(model_dir, file);
+    let first = ::mods::resolve_path(model_dir, file);
     if ::legacy_config::vfs::exists(&first) {
         return first;
     }
-    let model = ::legacy_config::resolve_path(dir, "model");
+    let model = ::mods::resolve_path(dir, "model");
     let parent = model_dir.parent().map(Path::to_path_buf);
     for base in [
         Some(dir.to_path_buf()),
@@ -249,7 +263,7 @@ fn mesh_path(root: &Path, dir: &Path, model_dir: &Path, file: &str) -> PathBuf {
     .into_iter()
     .flatten()
     {
-        let p = ::legacy_config::resolve_path(&base, file);
+        let p = ::mods::resolve_path(&base, file);
         if ::legacy_config::vfs::exists(&p) {
             return p;
         }
@@ -257,7 +271,7 @@ fn mesh_path(root: &Path, dir: &Path, model_dir: &Path, file: &str) -> PathBuf {
         // from inside `model`)
         let trimmed = file.trim_start_matches(['\\', '/']);
         if let Some(rest) = trimmed.split_once(['\\', '/']).map(|(_, r)| r) {
-            let p = ::legacy_config::resolve_path(&base, rest);
+            let p = ::mods::resolve_path(&base, rest);
             if ::legacy_config::vfs::exists(&p) {
                 return p;
             }
@@ -306,7 +320,7 @@ impl VehicleType {
             Vehicle::load(bus_file).with_context(|| format!("loading {}", bus_file.display()))?;
         let dir = def.dir().to_path_buf();
         let model_rel = def.model.clone().context("vehicle has no [model]")?;
-        let model_path = ::legacy_config::resolve_path(&dir, &model_rel);
+        let model_path = ::mods::resolve_path(&dir, &model_rel);
         let model = Model::load(&model_path)
             .with_context(|| format!("loading {}", model_path.display()))?;
         let model_dir = model_path
@@ -389,7 +403,7 @@ impl VehicleType {
                             skin,
                         })
                     }
-                    Err(e) => match ::legacy_config::missing_vehicle_pack(&p) {
+                    Err(e) => match ::mods::missing_vehicle_pack(&p) {
                         Some(pack) => match missing_packs
                             .iter_mut()
                             .find(|(n, _)| n.eq_ignore_ascii_case(&pack))
@@ -421,7 +435,7 @@ impl VehicleType {
         }
         let mut paint_schemes = Vec::new();
         for c in &model.ctc {
-            let d = ::legacy_config::resolve_path(&dir, &c.path);
+            let d = ::mods::resolve_path(&dir, &c.path);
             paint_schemes.extend(load_paint_schemes(&d));
         }
         // the model's own items, after the `.cti` files' (their textures in the first
@@ -429,7 +443,7 @@ impl VehicleType {
         let item_dir = model
             .ctc
             .first()
-            .map(|c| ::legacy_config::resolve_path(&dir, &c.path))
+            .map(|c| ::mods::resolve_path(&dir, &c.path))
             .unwrap_or_else(|| dir.clone());
         for it in &model.items {
             match paint_schemes.last_mut().filter(|s: &&mut PaintScheme| {
@@ -676,13 +690,13 @@ impl VehicleType {
                 }
                 let own = dirs
                     .iter()
-                    .map(|d| ::legacy_config::resolve_path(d, default))
+                    .map(|d| ::mods::resolve_path(d, default))
                     .find(|p| ::legacy_config::vfs::is_file(p));
                 let Some(own) = own else { continue };
                 if !flat_placeholder(&own) {
                     continue;
                 }
-                let theirs = ::legacy_config::resolve_path(&first.dir, file);
+                let theirs = ::mods::resolve_path(&first.dir, file);
                 if ::legacy_config::vfs::is_file(&theirs) {
                     log::info!(
                         "{}: CTC texture '{name}' is a flat placeholder ({default}); the first paint scheme's {file} lights it",
@@ -741,10 +755,10 @@ impl VehicleType {
         vec![
             // (the folder as it is spelled on the disk: many add-ons ship `texture`, which a
             // case-sensitive file system - Linux, a phone - does not find as `Texture`)
-            ::legacy_config::resolve_path(self.def.dir(), "Texture"),
-            ::legacy_config::resolve_path(&self.model_dir, "Texture"),
+            ::mods::resolve_path(self.def.dir(), "Texture"),
+            ::mods::resolve_path(&self.model_dir, "Texture"),
             self.model_dir.clone(),
-            ::legacy_config::resolve_path(root, "Texture"),
+            ::mods::resolve_path(root, "Texture"),
         ]
     }
 }
@@ -1305,12 +1319,12 @@ impl VehicleInstance {
     }
 
     /// Current text of a string variable as a borrowed slice (empty when it does not exist).
+    ///
+    /// OMSI model files may name a `[texttexture]`'s source by its string-variable slot
+    /// rather than its name. In particular, `0` is the built-in `ident` slot used by a
+    /// number of AI car models for their registration plates.
     pub fn str_var_str(&self, name: &str) -> &str {
-        self.ty
-            .program
-            .str_var(name)
-            .map(|i| self.state.str_vars[i as usize].as_str())
-            .unwrap_or("")
+        string_var_value(&self.ty.program, &self.state.str_vars, name)
     }
 
     /// Current text of a string variable (empty when it does not exist).
@@ -4471,6 +4485,19 @@ mod tests {
         assert_eq!(script_speed(0.000251), 0.0);
         assert_eq!(script_speed(-0.000251), 0.0);
         assert_eq!(script_speed(0.02), 0.02);
+    }
+
+    #[test]
+    fn numeric_texttexture_variable_reads_its_string_slot() {
+        let mut program = Program::default();
+        program.declare_str_var("ident");
+        program.declare_str_var("number");
+        let values = vec!["AP06 NSD".to_string(), "12345".to_string()];
+
+        assert_eq!(string_var_value(&program, &values, "ident"), "AP06 NSD");
+        assert_eq!(string_var_value(&program, &values, "0"), "AP06 NSD");
+        assert_eq!(string_var_value(&program, &values, "1"), "12345");
+        assert_eq!(string_var_value(&program, &values, "9"), "");
     }
 
     /// A shadow blob at the model's z = 0 is laid onto the plane through the wheels: 15 cm

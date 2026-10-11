@@ -54,7 +54,7 @@ impl Renderer {
         for l in &scene.interior_lights {
             gpu_lights.push(gpu_light(l, (l.position - ro).as_vec3()));
         }
-        let mut grid = vec![u32::MAX; side * side * LIGHT_CELL_CAP];
+        scene.light_grid.begin();
         let mut occ_users: Vec<(usize, u32)> = Vec::new();
         for (li, l) in scene.lights.iter().enumerate() {
             if !drawn_by(l, enhanced) {
@@ -82,13 +82,9 @@ impl Renderer {
             }
             for y in (y0.max(0.0) as usize)..=(y1.min(side as f32 - 1.0) as usize) {
                 for x in (x0.max(0.0) as usize)..=(x1.min(side as f32 - 1.0) as usize) {
-                    let base = (y * side + x) * LIGHT_CELL_CAP;
-                    if let Some(slot) = grid[base..base + LIGHT_CELL_CAP]
-                        .iter()
-                        .position(|v| *v == u32::MAX)
+                    if !scene.light_grid.add(y * side + x, idx)
+                        && ::legacy_config::env::var_os("OMSI_DEBUG_LIGHT_GRID").is_some()
                     {
-                        grid[base + slot] = idx;
-                    } else if ::legacy_config::env::var_os("OMSI_DEBUG_LIGHT_GRID").is_some() {
                         log::info!(
                             "light grid: cell ({x}, {y}) full, light at ({:.1}, {:.1}) radius {:.0} {} left out",
                             p.x,
@@ -142,12 +138,12 @@ impl Renderer {
             });
         }
         let gpu_lights_bytes: &[u8] = bytemuck::cast_slice(&gpu_lights);
-        let grid_bytes: &[u8] = bytemuck::cast_slice(&grid);
+        let grid_changed = scene.light_grid.finish();
         let mut rebuilt = false;
         match &scene.light_buf {
             Some(b) if b.size() as usize >= gpu_lights_bytes.len() => {
                 if scene.last_lights != gpu_lights_bytes {
-                    self.queue.write_buffer(b, 0, gpu_lights_bytes);
+                    self.write_buffer(b, 0, gpu_lights_bytes);
                 }
             }
             _ => {
@@ -158,15 +154,19 @@ impl Renderer {
                     usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
                     mapped_at_creation: false,
                 });
-                self.queue.write_buffer(&b, 0, gpu_lights_bytes);
+                self.write_buffer(&b, 0, gpu_lights_bytes);
                 scene.light_buf = Some(b);
                 rebuilt = true;
             }
         }
         match &scene.grid_buf {
             Some(b) => {
-                if scene.last_grid != grid {
-                    self.queue.write_buffer(b, 0, grid_bytes);
+                if let Some(span) = grid_changed {
+                    self.write_buffer(
+                        b,
+                        (span.start * size_of::<u32>()) as u64,
+                        bytemuck::cast_slice(&scene.light_grid.cells[span]),
+                    );
                 }
             }
             None => {
@@ -174,7 +174,7 @@ impl Renderer {
                     &self.device,
                     &self.queue,
                     Some("light grid"),
-                    grid_bytes,
+                    bytemuck::cast_slice(&scene.light_grid.cells),
                     wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
                 ));
                 rebuilt = true;
@@ -182,7 +182,6 @@ impl Renderer {
         }
         scene.last_lights.clear();
         scene.last_lights.extend_from_slice(gpu_lights_bytes);
-        scene.last_grid = grid;
         if rebuilt {
             self.rebuild_camera_bind_group(scene);
         }
@@ -214,7 +213,7 @@ impl Renderer {
         }
         let bytes: &[u8] = bytemuck::cast_slice(&data);
         match &scene.smoke_buf {
-            Some(b) if b.size() as usize >= bytes.len() => self.queue.write_buffer(b, 0, bytes),
+            Some(b) if b.size() as usize >= bytes.len() => self.write_buffer(b, 0, bytes),
             _ => {
                 let b = self.device.create_buffer(&wgpu::BufferDescriptor {
                     label: Some("smoke"),
@@ -222,7 +221,7 @@ impl Renderer {
                     usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
                     mapped_at_creation: false,
                 });
-                self.queue.write_buffer(&b, 0, bytes);
+                self.write_buffer(&b, 0, bytes);
                 scene.smoke_buf = Some(b);
             }
         }
@@ -232,12 +231,26 @@ impl Renderer {
         let n = LM_TILE_PX as usize;
         let mut px = vec![0u8; n * n * 4];
         if let Some(img) = img.filter(|i| i.width > 0 && i.height > 0) {
+            let (iw, ih) = (img.width as usize, img.height as usize);
             for y in 0..n {
+                let y0 = y * ih / n;
+                let y1 = ((y + 1) * ih / n).max(y0 + 1).min(ih);
                 for x in 0..n {
-                    let sx = x * img.width as usize / n;
-                    let sy = y * img.height as usize / n;
-                    let o = (sy * img.width as usize + sx) * 4;
-                    px[(y * n + x) * 4..(y * n + x) * 4 + 4].copy_from_slice(&img.rgba[o..o + 4]);
+                    let x0 = x * iw / n;
+                    let x1 = ((x + 1) * iw / n).max(x0 + 1).min(iw);
+                    let mut sum = [0u32; 4];
+                    for sy in y0..y1 {
+                        for sx in x0..x1 {
+                            let o = (sy * iw + sx) * 4;
+                            for c in 0..4 {
+                                sum[c] += img.rgba[o + c] as u32;
+                            }
+                        }
+                    }
+                    let cnt = ((y1 - y0) * (x1 - x0)) as u32;
+                    for c in 0..4 {
+                        px[(y * n + x) * 4 + c] = ((sum[c] + cnt / 2) / cnt) as u8;
+                    }
                 }
             }
         }
@@ -373,7 +386,7 @@ impl Renderer {
         }
         let bytes: &[u8] = bytemuck::cast_slice(&data);
         match &scene.corona_buf {
-            Some(b) if b.size() as usize >= bytes.len() => self.queue.write_buffer(b, 0, bytes),
+            Some(b) if b.size() as usize >= bytes.len() => self.write_buffer(b, 0, bytes),
             _ => {
                 let b = self.device.create_buffer(&wgpu::BufferDescriptor {
                     label: Some("coronas"),
@@ -381,7 +394,7 @@ impl Renderer {
                     usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
                     mapped_at_creation: false,
                 });
-                self.queue.write_buffer(&b, 0, bytes);
+                self.write_buffer(&b, 0, bytes);
                 scene.corona_buf = Some(b);
             }
         }

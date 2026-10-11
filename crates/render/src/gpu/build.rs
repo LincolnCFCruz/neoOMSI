@@ -1652,46 +1652,6 @@ impl Renderer {
             },
             alpha: wgpu::BlendComponent::OVER,
         };
-        let overlay_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("overlay"),
-            layout: Some(&overlay_pl),
-            vertex: wgpu::VertexState {
-                module: &overlay_shader,
-                entry_point: Some("vs_main"),
-                buffers: &[],
-                compilation_options: Default::default(),
-            },
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                cull_mode: None,
-                front_face: wgpu::FrontFace::Ccw,
-                ..Default::default()
-            },
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: DEPTH_FORMAT,
-                depth_write_enabled: Some(false),
-                depth_compare: Some(wgpu::CompareFunction::Always),
-                stencil: Default::default(),
-                bias: Default::default(),
-            }),
-            multisample: wgpu::MultisampleState {
-                count: msaa,
-                mask: !0,
-                alpha_to_coverage_enabled: false,
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &overlay_shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format,
-                    blend: Some(premul),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: Default::default(),
-            }),
-            multiview_mask: None,
-            cache: None,
-        });
         log::info!("renderer: compiling the SSAO shaders");
         let ssao_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("ssao"),
@@ -2571,6 +2531,25 @@ impl Renderer {
         let gpu_timers = [GpuTimers::new(&device), GpuTimers::new(&device)];
         let puddles = (!leave_out_enhanced)
             .then(|| puddles::Pipelines::new(&device, &shader, &camera_layout, &material_layout));
+        let encoding_pool = if ::legacy_config::env::var_os("OMSI_NO_RENDER_POOL").is_some() {
+            None
+        } else {
+            let workers = std::thread::available_parallelism()
+                .map(|n| n.get() / 2)
+                .unwrap_or(2)
+                .clamp(2, 8);
+            rayon::ThreadPoolBuilder::new()
+                .num_threads(workers)
+                .thread_name(|i| format!("render-{i}"))
+                .build()
+                .ok()
+                .map(Arc::new)
+        };
+        let submitter = if ::legacy_config::env::var_os("OMSI_NO_SUBMIT_THREAD").is_some() {
+            None
+        } else {
+            Submitter::new(queue.clone(), encoding_pool.clone())
+        };
         Renderer {
             _device_poller: DevicePoller::start(&device),
             upscale_pipeline,
@@ -2627,6 +2606,7 @@ impl Renderer {
             last_frame: None,
             instant_exposure: false,
             overlay_pipeline_1x,
+            frost: None,
             xr_ui_pipeline,
             started: std::time::Instant::now(),
             ao: None,
@@ -2655,7 +2635,6 @@ impl Renderer {
             cloud_detail_view,
             cloud_sampler,
             sky_mesh,
-            overlay_pipeline,
             overlay_layout,
             sampler,
             camera_buf,
@@ -2685,19 +2664,12 @@ impl Renderer {
             counts: Default::default(),
             profiling: ::legacy_config::env::var_os("OMSI_PROFILE").is_some(),
             draw_audit_at: std::time::Instant::now(),
-            encoding_pool: if ::legacy_config::env::var_os("OMSI_NO_RENDER_POOL").is_some() {
-                None
-            } else {
-                let workers = std::thread::available_parallelism()
-                    .map(|n| n.get() / 2)
-                    .unwrap_or(2)
-                    .clamp(2, 8);
-                rayon::ThreadPoolBuilder::new()
-                    .num_threads(workers)
-                    .thread_name(|i| format!("render-{i}"))
-                    .build()
-                    .ok()
-            },
+            submitter,
+            encoding_pool,
+            queued: Default::default(),
+            defer_next: Default::default(),
+            defer_views: Default::default(),
+            uploads: Default::default(),
             pending_meshes: Default::default(),
             freed: std::cell::OnceCell::new(),
         }

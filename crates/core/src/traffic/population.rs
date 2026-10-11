@@ -1510,6 +1510,12 @@ impl Traffic {
             )));
             lead = t;
         }
+        self.occupied(&bodies, pos)
+    }
+
+    /// Do `bodies` (a vehicle's, placed with its origin at `pos`) touch one that is already
+    /// there - an AI vehicle, or one of `keep_clear`?
+    pub fn occupied(&self, bodies: &[::simulation::collision::Obb], pos: DVec3) -> bool {
         let reach = bodies
             .iter()
             .map(|b| (b.center - pos.truncate()).length() + b.half.length())

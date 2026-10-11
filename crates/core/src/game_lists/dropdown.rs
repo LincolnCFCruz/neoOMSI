@@ -4,7 +4,7 @@ use super::*;
 
 pub(super) fn weather_files() -> Vec<String> {
     scan_cached(&WEATHER_SCAN, || {
-        let mut files: Vec<String> = ::legacy_config::read_dir_merged("Weather")
+        let mut files: Vec<String> = ::mods::read_dir_merged("Weather")
             .into_iter()
             .filter(|p| {
                 p.extension()
@@ -137,6 +137,18 @@ pub(crate) fn settings_dropdown(root: &std::path::Path, row: usize, id: &str) ->
             .into_iter()
             .map(|n| (n.clone(), format!("gfxprofile {n}")))
             .collect(),
+        "voicemic" => {
+            let now = ::config::get_string("voice", "mic").unwrap_or_default();
+            let mut all = vec![(
+                ::i18n::translate("pause.options.voice.mic.default", &[]),
+                String::new(),
+            )];
+            all.extend(audio::mic::input_devices().into_iter().map(|d| (d.clone(), d)));
+            current = Some(all.iter().position(|d| d.1 == now).unwrap_or(0));
+            all.into_iter()
+                .map(|(label, d)| (label, format!("voicemic {d}")))
+                .collect()
+        }
         "reset" => vec![
             (tr("Cancel"), "noop".to_string()),
             (tr("Reset all settings"), "reset_all".to_string()),
@@ -267,6 +279,10 @@ pub(crate) fn settings_pick(mut app: Option<&mut App>, action: &str) -> Option<S
 fn settings_pick_inner(mut app: Option<&mut App>, action: &str) -> Option<String> {
     let (verb, arg) = action.split_once(' ').unwrap_or((action, ""));
     match verb {
+        "voicemic" => {
+            ::config::set_setting("voice", "mic", arg);
+            let _ = ::config::save();
+        }
         "pick" => {
             if let Some((key, value)) = arg.split_once(' ') {
                 if key == "boarding" {
@@ -293,6 +309,9 @@ fn settings_pick_inner(mut app: Option<&mut App>, action: &str) -> Option<String
                     let _ = ::config::save();
                 } else if key == "units" {
                     ::config::set_setting("ui", "units", value);
+                    let _ = ::config::save();
+                } else if key == "voice_mode" {
+                    ::config::set_setting("voice", "mode", value);
                     let _ = ::config::save();
                 } else if key == "navigator_corner" {
                     ::config::set_setting("ui", "navigator_corner", value.to_ascii_lowercase());
@@ -459,7 +478,7 @@ pub(super) fn select_options(key: &str) -> Vec<(&'static str, &'static str)> {
             ("0.67", "67%"),
             ("0.5", "50%"),
         ],
-        "anisotropy" => vec![("1", "Off"), ("2", "2x"), ("4", "4x"), ("8", "8x")],
+        "anisotropy" => vec![("1", "Off"), ("2", "2x"), ("4", "4x"), ("8", "8x"), ("16", "16x")],
         "shadow_size" => vec![("1024", "1024"), ("2048", "2048"), ("4096", "4096")],
         "shadow_casters" => vec![
             ("all", "Every solid mesh"),
@@ -553,6 +572,10 @@ pub(super) fn select_options(key: &str) -> Vec<(&'static str, &'static str)> {
         ],
         "pax_models" => vec![("omsi", "OMSI 2"), ("realistic", "Realistic")],
         "pax_motion" => vec![("natural", "Natural"), ("omsi", "OMSI 2")],
+        "voice_mode" => vec![
+            ("ptt", "Push-to-talk (hold the key)"),
+            ("auto", "Voice activation"),
+        ],
         "pax_voices" => vec![
             ("all", "Greetings and tickets"),
             ("tickets", "Only the ticket asked for"),
@@ -643,6 +666,8 @@ pub(super) fn select_state(
         ::config::get_string("ui", "language").unwrap_or_default()
     } else if key == "units" {
         ::config::get_string("ui", "units").unwrap_or_default()
+    } else if key == "voice_mode" {
+        ::config::get_string("voice", "mode").unwrap_or_default()
     } else if key == "navigator_corner" {
         ::config::get_string("ui", "navigator_corner").unwrap_or_default()
     } else if key == "maintenance" {
@@ -710,4 +735,21 @@ pub(crate) fn preset_row(
         None => value_label("preset", "custom", "Custom"),
     };
     Some((row(name, 'o', &label, desc, None), "preset".to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::select_options;
+
+    #[test]
+    fn window_mode_choices_remain_distinct() {
+        assert_eq!(
+            select_options("window_mode"),
+            vec![
+                ("windowed", "Windowed"),
+                ("borderless", "Windowed Borderless"),
+                ("fullscreen", "Fullscreen"),
+            ]
+        );
+    }
 }

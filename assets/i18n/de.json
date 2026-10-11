@@ -489,7 +489,8 @@
         "sound": "Ton",
         "vr": "VR",
         "head_tracking": "Head-Tracking",
-        "general": "Allgemein"
+        "general": "Allgemein",
+        "voice": "Sprachchat"
       },
       "info": {
         "time": {
@@ -777,7 +778,7 @@
         },
         "window_mode": {
           "windowed": "Fenster",
-          "borderless": "Rahmenlos",
+          "borderless": "Fenster ohne Rahmen",
           "fullscreen": "Vollbild"
         },
         "post_aa": {
@@ -802,6 +803,47 @@
           "yaw roll": "Gieren und Rollen",
           "pitch roll": "Nicken und Rollen",
           "yaw pitch roll": "Gieren, Nicken und Rollen"
+        },
+        "voice_mode": {
+          "ptt": "Sprechtaste (gedrückt halten)",
+          "auto": "Sprachaktivierung"
+        }
+      },
+      "voice": {
+        "voice": {
+          "name": "Sprachchat",
+          "desc": "Mit den Spielern in deiner Nähe sprechen, in einer Mehrspielersitzung"
+        },
+        "voice_mode": {
+          "name": "Sprechen",
+          "desc": "Die Sprechtaste halten (siehe Tastenbelegung; mit Umschalt: über Funk) oder immer, wenn du sprichst"
+        },
+        "mic": {
+          "name": "Mikrofon",
+          "desc": "Sprich: der Balken zeigt, wie laut du bist, und die Zeile leuchtet, solange dich die anderen hören",
+          "default": "Systemstandard",
+          "off": "Schalte den Sprachchat ein, um das Mikrofon zu testen"
+        },
+        "mic_gain": {
+          "name": "Mikrofonlautstärke",
+          "desc": "Wie laut dich die anderen hören"
+        },
+        "voice_sensitivity": {
+          "name": "Sprachaktivierung",
+          "desc": "Höher: auch leiseres Sprechen öffnet das Mikrofon"
+        },
+        "voice_denoise": {
+          "name": "Rauschunterdrückung",
+          "desc": "Filtert Motor, Wind und Tastatur aus deinem Mikrofon"
+        },
+        "vol_voice": {
+          "name": "Andere Spieler",
+          "desc": "Wie laut die Stimmen der anderen sind"
+        },
+        "pvol": {
+          "name": "Spieler",
+          "desc": "Die Stimme dieses Spielers (0: stumm)",
+          "muted": "stumm"
         }
       }
     },
@@ -979,13 +1021,21 @@
         "the_game_follows_your_device_s_date_and_time": "Das Spiel folgt dem Datum und der Uhrzeit deines Geräts",
         "date_and_time": "Datum und Uhrzeit",
         "synchronized_with_the_real_time": "Mit der Echtzeit synchronisiert",
-        "exact_time": "Genaue Uhrzeit",
+        "exact_time": "Uhrzeit",
         "press_enter_to_change_esc_to_cancel": "Mit Enter übernehmen, mit Esc abbrechen",
         "change_the_current_time_press_enter_to_change": "Ändere die aktuelle Uhrzeit (mit Enter übernehmen)",
+        "exact_date": "Datum",
+        "change_the_current_date_press_enter_to_change": "Ändere das aktuelle Datum (mit Enter übernehmen)",
         "hour": "Stunde",
         "set_the_hour_of_the_day_directly": "Stelle die Stunde des Tages direkt ein",
         "minute": "Minute",
         "set_the_minute_directly": "Stelle die Minute direkt ein",
+        "day": "Tag",
+        "set_the_day_directly": "Stelle den Tag direkt ein",
+        "month": "Monat",
+        "set_the_month_directly": "Stelle den Monat direkt ein",
+        "year": "Jahr",
+        "set_the_year_directly": "Stelle das Jahr direkt ein",
         "morning": "Morgen",
         "noon": "Mittag",
         "evening": "Abend",
@@ -1067,8 +1117,19 @@
         "desc": "Ein ausgeschalteter Controller wird ignoriert."
       },
       "axes": "Achsen",
+      "axis_mode": {
+        "name": "Achsenmodus",
+        "desc": "Auto erkennt Lenkräder und Pedale. Gamepad verwendet Sticks und Trigger; Nativ verwendet die eigenen Achsen des Geräts.",
+        "auto": "Auto",
+        "gamepad": "Gamepad",
+        "native": "Nativ"
+      },
       "axis": {
         "desc": "Was diese Achse bewirkt.",
+        "invert": {
+          "name": "Invertieren",
+          "desc": "Kehrt diese Achse um, auch bevor eine Funktion zugeordnet wurde."
+        },
         "name": {
           "0": "X-Achse",
           "1": "Y-Achse",
@@ -1205,7 +1266,7 @@
       "no_routes": "Keine Liniennummern in der Betriebshofdatei oder im Fahrplan",
       "no_hofs": "Dieser Bus hat keine Betriebshofdateien (.hof)",
       "entry": "Spawnpunkt {number}",
-      "no_entries": "Diese Karte hat keine Spawnpunkt",
+      "no_entries": "Diese Karte hat keine Spawnpunkte",
       "maker_models": "{name}  ({count} Modelle)",
       "unknown_maker": "Unbekannter Hersteller",
       "no_numbers": "Dieser Bus hat keine Liste mit Wagennummern",
@@ -1225,7 +1286,7 @@
       "blinker_warn_toggle": "Warnblinker",
       "brake": "Bremse",
       "bus_20h_switch": "20-h-Schalter",
-      "bus_dooraft": "Hintere Türen",
+      "bus_dooraft": "Türfreigabe",
       "bus_doorfront0": "Vordertür 1",
       "bus_doorfront1": "Vordertür 2",
       "bus_doorfront5": "Vordertür 6",
@@ -1329,6 +1390,7 @@
       "ticket_give": "Fahrschein ausgeben",
       "toggel_ctrler": "Controller umschalten",
       "toggel_mouse_ctrl": "Maussteuerung umschalten",
+      "toggle_navigator": "Navigator ein-/ausblenden",
       "view_interiorcam_minus": "Innenkamera: vorherige",
       "view_interiorcam_plus": "Innenkamera: nächste",
       "view_reset_all_directions": "Alle Blickrichtungen zurücksetzen",
@@ -1341,7 +1403,9 @@
       "view_set_schedule": "Ansicht: Fahrplan",
       "view_set_ticketselling": "Ansicht: Fahrscheinverkauf",
       "view_toggle_informationdisplay": "Informationsanzeige umschalten",
-      "view_toggle_viewpoint": "Blickpunkt umschalten"
+      "view_toggle_viewpoint": "Blickpunkt umschalten",
+      "voice_talk": "Mehrspieler: sprechen (halten)",
+      "voice_radio": "Mehrspieler: über Funk sprechen (halten)"
     },
     "keybinds": {
       "not_set": "Nicht belegt",
@@ -1375,7 +1439,11 @@
       "start_point_missing": "Dieser Startpunkt wurde nicht gefunden",
       "destination": "Ziel: {name}",
       "fleet_number": "Wagennummer: {number}",
-      "key_conflict": "Diese Taste wird bereits verwendet von: {keys}"
+      "key_conflict": "Diese Taste wird bereits verwendet von: {keys}",
+      "voice_talking": "Sprachchat: du sprichst",
+      "voice_radio": "Sprachchat: über Funk",
+      "voice_error": "Sprachchat: {error}",
+      "voice_mic_denied": "das Mikrofon ist nicht erlaubt"
     },
     "admin": {
       "player": "Spieler {id}",
@@ -1414,7 +1482,10 @@
       "host_brought": "Der Host hat dich hierher geholt",
       "host_service": "Der Host hat einen Service ausgeführt: {kind}",
       "host_upright": "Der Host hat dein Fahrzeug aufgerichtet",
-      "wrong_password": "Falsches Passwort"
+      "wrong_password": "Falsches Passwort",
+      "mute": "Mikrofon von {name} stummschalten",
+      "unmute": "{name} wieder sprechen lassen",
+      "voice": "Sprachchat: {state}"
     }
   }
 }

@@ -6,6 +6,7 @@ impl Renderer {
             meshes: Vec::new(),
             textures: Vec::new(),
             tex_luma: Default::default(),
+            uploaded: Default::default(),
             glass_slot: None,
             materials: Vec::new(),
             instances: Vec::new(),
@@ -34,6 +35,7 @@ impl Renderer {
             sky_bind_group: None,
             overlays: Vec::new(),
             premultiplied: Default::default(),
+            frosted: Default::default(),
             overlay_res: Vec::new(),
             dirty: true,
             changed: Vec::new(),
@@ -45,7 +47,7 @@ impl Renderer {
             uploaded_entries: 0,
             cpu_models: Vec::new(),
             cpu_params: Vec::new(),
-            last_grid: Vec::new(),
+            light_grid: Default::default(),
             last_lights: Vec::new(),
             bind_groups: HashMap::new(),
             pbr_maps: HashMap::new(),
@@ -99,6 +101,7 @@ impl Renderer {
             mirror_only: false,
             omsi_caster: false,
             ordered: false,
+            ordered_index: 0,
             casts_shadow: true,
             roof: None,
         });
@@ -151,6 +154,7 @@ impl Renderer {
             mirror_only: false,
             omsi_caster: false,
             ordered: false,
+            ordered_index: 0,
             casts_shadow: false,
             roof: None,
         });
@@ -238,9 +242,13 @@ impl Renderer {
         }
     }
 
-    pub fn set_ordered(&self, scene: &mut Scene, instance: usize, on: bool) {
+    /// Draw an instance in its model's authored mesh order. `index` is supplied by the
+    /// owner each time it attaches an instance, because GPU cache reuse may change the
+    /// scene instance id after a vehicle despawns.
+    pub fn set_ordered(&self, scene: &mut Scene, instance: usize, index: u32) {
         if let Some(i) = scene.instances.get_mut(instance) {
-            i.ordered = on;
+            i.ordered = true;
+            i.ordered_index = index;
         }
     }
 

@@ -461,7 +461,7 @@ impl World {
                 extra.screen = d.script.is_some() || d.script_trans.is_some();
                 // ... and a `\S:n` mask makes it an LED panel: its lit dots are its own
                 // light, which the enhanced picture blooms (see `MaterialExtra::led`)
-                extra.led = d.script_trans.is_some() && d.extra.led;
+                extra.led = (d.script_trans.is_some() || d.script.is_some()) && d.extra.led;
                 let m = renderer.add_material_extra(
                     scene,
                     tex,
@@ -540,18 +540,33 @@ impl World {
                 }
             }
         }
+        // A generated text layer can likewise rely on the model order.  The WH UK AI cars,
+        // for example, draw the solid plate first and its transparent registration glyphs in
+        // the following mesh, with both layers marked `[matl_noZwrite]`.  Drawing an AI car
+        // opaque-then-blended lets those two surfaces contend at the plate rather than follow
+        // the order authored by the model.
+        let ordered_text_layer = set
+            .dyn_slots
+            .iter()
+            .any(|d| d.text.is_some() && d.extra.no_z_write);
         // (the Sprinter's, the Mercus's, the Urbino 15's saloon showed through half their
         // panels drawn so while `[matl_noZcheck]` still took their inner glass out of the
         // depth test; OMSI_NO_MODEL_ORDER=1 draws opaque parts first again)
-        // AI uses opaque-then-blended rendering; player vehicles retain model order.
-        if ordered && key.is_none() && ::legacy_config::env::var_os("OMSI_NO_MODEL_ORDER").is_none() {
+        if (ordered || ordered_text_layer)
+            && ::legacy_config::env::var_os("OMSI_NO_MODEL_ORDER").is_none()
+        {
             log::debug!(
-                "{}: drawn in model order (a blended slot writes depth before an opaque one)",
-                vt.def.path.display()
+                "{}: drawn in model order ({})",
+                vt.def.path.display(),
+                if ordered {
+                    "a blended slot writes depth before an opaque one"
+                } else {
+                    "a non-depth-writing generated text layer follows its backing surface"
+                }
             );
-            for &i in &instances {
+            for (model_order, &i) in instances.iter().enumerate() {
                 if scene.instances.get(i).is_some_and(|x| !x.blob) {
-                    renderer.set_ordered(scene, i, true);
+                    renderer.set_ordered(scene, i, model_order as u32);
                 }
             }
         }
@@ -825,7 +840,10 @@ impl World {
                     let html_page = |n: Option<usize>| n.is_some_and(|n| vt.model.html_textures.iter().any(|d| d.script_index == n));
                     let lm_white = |ov: &[&MaterialDef]| -> bool {
                         let named = ov.iter().filter_map(|o| o.lightmap.as_ref().map(|l| l.0.as_str())).chain(std::iter::once(m.texture.as_str())).any(is_led_name);
-                        named && ov.iter().find_map(|o| o.lightmap.as_ref()).and_then(|(t, _)| lightmap_is_white(t, &dirs_ref)).unwrap_or(true)
+                        match ov.iter().find_map(|o| o.lightmap.as_ref()).and_then(|(t, _)| lightmap_is_white(t, &dirs_ref)) {
+                            Some(white) => white,
+                            None => named || ov.iter().all(|o| o.lightmap.is_none()),
+                        }
                     };
                     // [matl_envmap] tex factor: reflectivity = factor (saturating at 1) x the
                     // reflection mask, which is the [matl_envmap_mask]'s alpha or else the
@@ -869,7 +887,7 @@ impl World {
                     // without the flags on this `extra` the K++ and Krueger panels showed
                     // their dots but never glowed.
                     extra.screen = script_slot.is_some() || script_trans.is_some();
-                    extra.led = script_trans.is_some() && !html_page(script_trans) && lm_white(&ov);
+                    extra.led = (script_trans.is_some() || script_slot.is_some()) && !html_page(script_trans) && !html_page(script_slot) && lm_white(&ov);
                     // (an HTML page glows by itself, as an LED panel's dots do)
                     extra.html = !extra.led && (html_page(script_slot) || html_page(script_trans));
                     if dirt_overlay {
@@ -964,7 +982,7 @@ impl World {
                         it_extra.screen = script_item.is_some() || it_script_trans.is_some();
                         // (the item's `\S:n`, or the one it inherits from its base, keeps it
                         // an LED panel: see `MaterialExtra::led`)
-                        it_extra.led = it_script_trans.is_some() && !html_page(it_script_trans) && if ov_item.iter().any(|o| o.lightmap.is_some()) { lm_white(ov_item) } else { lm_white(&ov) };
+                        it_extra.led = (it_script_trans.is_some() || script_item.is_some()) && !html_page(it_script_trans) && !html_page(script_item) && if ov_item.iter().any(|o| o.lightmap.is_some()) { lm_white(ov_item) } else { lm_white(&ov) };
                         it_extra.html = !it_extra.led && (html_page(script_item) || html_page(it_script_trans));
                         it_extra.no_z_write |= extra.no_z_write;
                         it_extra.no_z_check |= extra.no_z_check;
@@ -1027,7 +1045,10 @@ impl World {
                         dirs: dirs.clone(),
                         textures: self.textures.clone(),
                         cache: HashMap::new(),
+                        more_cache: HashMap::new(),
+                        texture_cache: HashMap::new(),
                         current: None,
+                        texture: None,
                         shared: self.vehicle_textures.clone(),
                         held: Vec::new(),
                         wants_upgrade: self.freetex_upgrades.clone(),
@@ -1042,6 +1063,7 @@ impl World {
                             maps,
                             plain: (base, item),
                             cache: HashMap::new(),
+                            more_cache: HashMap::new(),
                             current: 0,
                             shared: self.vehicle_textures.clone(),
                             held: Vec::new(),

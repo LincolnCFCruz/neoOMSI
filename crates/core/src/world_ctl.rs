@@ -221,7 +221,7 @@ impl App {
             return;
         };
         let file = &p.vehicle.ty.def.path;
-        let bus = ::legacy_config::content_roots()
+        let bus = ::mods::content_roots()
             .iter()
             .chain(std::iter::once(&self.args.root))
             .find_map(|r| file.strip_prefix(r).ok())
@@ -507,7 +507,7 @@ impl App {
             self.service_msg = Some(("In a LAN session the host sets the weather".into(), 3.0));
             return;
         }
-        let mut files: Vec<String> = ::legacy_config::read_dir_merged("Weather")
+        let mut files: Vec<String> = ::mods::read_dir_merged("Weather")
             .into_iter()
             .filter(|p| {
                 p.extension()
@@ -840,6 +840,18 @@ impl App {
         self.sync_vehicle_game_times();
     }
 
+    pub(crate) fn set_clock_date(&mut self, year: i32, month: i32, day: i32) {
+        let days = |y: i32, doy: i32| -> i64 {
+            (1..y).map(|i| ::simulation::clock::days_in_year(i) as i64).sum::<i64>() + doy as i64
+        };
+        let mut c = self.clock.clone();
+        c.set_date(year, month, day);
+        let diff = days(c.year, c.day_of_year) - days(self.clock.year, self.clock.day_of_year);
+        if diff != 0 {
+            self.shift_clock(diff as f64 * 86400.0);
+        }
+    }
+
     pub(crate) fn shift_clock(&mut self, secs: f64) {
         if self.real_time_locked() {
             self.service_msg = Some((
@@ -851,16 +863,21 @@ impl App {
         let mut t = self.clock.time + secs;
         while t < 0.0 {
             t += 86400.0;
-            self.clock.day_of_year = if self.clock.day_of_year > 1 {
-                self.clock.day_of_year - 1
+            if self.clock.day_of_year > 1 {
+                self.clock.day_of_year -= 1;
             } else {
-                ::simulation::clock::days_in_year(self.clock.year - 1)
-            };
+                self.clock.year -= 1;
+                self.clock.day_of_year = ::simulation::clock::days_in_year(self.clock.year);
+            }
         }
         while t >= 86400.0 {
             t -= 86400.0;
-            self.clock.day_of_year =
-                self.clock.day_of_year % ::simulation::clock::days_in_year(self.clock.year) + 1;
+            if self.clock.day_of_year >= ::simulation::clock::days_in_year(self.clock.year) {
+                self.clock.day_of_year = 1;
+                self.clock.year += 1;
+            } else {
+                self.clock.day_of_year += 1;
+            }
         }
         self.clock.time = t;
         if let Some(tr) = self.traffic.as_mut() {

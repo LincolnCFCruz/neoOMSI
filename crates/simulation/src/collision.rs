@@ -444,13 +444,21 @@ impl MeshShape {
 
     fn near_height(&self, c: DVec2, r: f64, z0: f64, z1: f64) -> Vec<u32> {
         let mut out: Vec<u32> = Vec::new();
+        let mut taken: Vec<u64> = Vec::new();
         for y in ((c.y - r) / PART_CELL).floor() as i32..=((c.y + r) / PART_CELL).floor() as i32 {
             for x in ((c.x - r) / PART_CELL).floor() as i32..=((c.x + r) / PART_CELL).floor() as i32
             {
                 for &i in self.grid.get(&(x, y)).map(|v| v.as_slice()).unwrap_or(&[]) {
                     let p = &self.parts[i as usize];
-                    if p.z1 > z0 && p.z0 < z1
-                        && (p.center - c).length() <= r + p.radius() && !out.contains(&i) {
+                    if p.z1 <= z0 || p.z0 >= z1 || (p.center - c).length() > r + p.radius() {
+                        continue;
+                    }
+                    if taken.is_empty() {
+                        taken = vec![0; self.parts.len().div_ceil(64)];
+                    }
+                    let (word, bit) = (i as usize / 64, 1u64 << (i % 64));
+                    if taken[word] & bit == 0 {
+                        taken[word] |= bit;
                         out.push(i);
                     }
                 }

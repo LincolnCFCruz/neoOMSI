@@ -209,6 +209,83 @@ fn freetex_preserves_other_stages_and_per_vehicle_script_textures() {
 }
 
 #[test]
+fn freetex_updates_every_light_state_of_a_changed_slot() {
+    // London's Powerblind uses a free-texture picture with `[matl_change] lights_stand`.
+    // AI buses can select item 2+, so it must receive the live destination picture too.
+    let mut base = freetex_test_look();
+    base.diffuse = Some(10);
+    let item = base.clone();
+    let spec = SlotSpec {
+        base,
+        item: Some(item.clone()),
+        more: vec![item],
+    };
+
+    let changed = spec.with_freetex(Some(10), 20, true, false);
+    assert_eq!(changed.base.diffuse, Some(20));
+    assert_eq!(changed.item.as_ref().unwrap().diffuse, Some(20));
+    assert_eq!(changed.more[0].diffuse, Some(20));
+}
+
+#[test]
+fn freetex_and_dynamic_lightmap_keep_the_live_display_texture() {
+    // C400R's dashboard pairs [matl_freetex] with two [matl_lightmap] declarations.
+    // When the screen finishes booting, the active light map must not rebuild the slot
+    // from its black placeholder texture.
+    let mut base = freetex_test_look();
+    base.diffuse = Some(10);
+    base.lightmap = Some(11);
+    let item = base.clone();
+    let spec = SlotSpec {
+        base,
+        item: Some(item.clone()),
+        more: vec![item],
+    };
+    let mut changed = spec.with_freetex(Some(10), 20, true, false);
+    changed.set_lightmap(Some(30));
+    assert_eq!(changed.base.diffuse, Some(20));
+    assert_eq!(changed.base.lightmap, Some(30));
+    assert_eq!(changed.item.as_ref().unwrap().diffuse, Some(20));
+    assert_eq!(changed.item.as_ref().unwrap().lightmap, Some(30));
+    assert_eq!(changed.more[0].diffuse, Some(20));
+    assert_eq!(changed.more[0].lightmap, Some(30));
+}
+
+#[test]
+fn item_only_freetex_overrides_a_matching_base_freetex() {
+    let mut base = freetex_test_look();
+    base.diffuse = Some(10);
+    let item = base.clone();
+    let spec = SlotSpec {
+        base,
+        item: Some(item),
+        more: Vec::new(),
+    };
+    let base_changed = spec.with_freetex_from(&spec, Some(10), 20, true, false);
+    let changed = base_changed.with_freetex_from(&spec, Some(10), 30, true, true);
+
+    assert_eq!(changed.base.diffuse, Some(20));
+    assert_eq!(changed.item.as_ref().unwrap().diffuse, Some(30));
+}
+
+#[test]
+fn inactive_dynamic_lightmap_keeps_the_original_lightmap() {
+    let mut base = freetex_test_look();
+    base.diffuse = Some(10);
+    base.lightmap = Some(11);
+    let spec = SlotSpec {
+        base,
+        item: None,
+        more: Vec::new(),
+    };
+    let mut changed = spec.with_freetex(Some(10), 20, true, false);
+    changed.set_lightmap(None);
+
+    assert_eq!(changed.base.diffuse, Some(20));
+    assert_eq!(changed.base.lightmap, Some(11));
+}
+
+#[test]
 fn spline_batches_keep_materials_cells_shadows_and_long_segments_separate() {
     use ::scenery::sli::SplineTexture;
     let def = |file: &str| Spline {
@@ -652,4 +729,49 @@ fn standard_traffic_lamps_are_state_driven() {
         standard_traffic_lamp("custom_channel", true, true, true, false),
         None
     );
+}
+
+/// Drawn ground over a buried road face carries the wheel, as in Omsi.exe (#208).
+#[test]
+fn drawn_ground_over_a_buried_road_face_carries_the_wheel() {
+    let probe_over = |road_z: f32, ground: f32, top: f64, cut: bool| {
+        let side = tile_size() as f32;
+        let (a, b) = (side * 0.25, side * 0.75);
+        let face = MeshData {
+            positions: vec![
+                glam::Vec3::new(a, a, road_z),
+                glam::Vec3::new(b, a, road_z),
+                glam::Vec3::new(b, b, road_z),
+                glam::Vec3::new(a, b, road_z),
+            ],
+            indices: vec![0, 1, 2, 0, 2, 3],
+            ..Default::default()
+        };
+        let mut ts = TileSurface::new(SURFACE_RASTER);
+        ts.add_drive_mesh(&face, &Mat4::IDENTITY, DVec3::ZERO, 0, 0, None);
+        if cut {
+            ts.rasterize_hole(&face, &Mat4::IDENTITY, DVec3::ZERO, 0, 0);
+        }
+        ts.finish();
+        let mut terrain = Terrain::flat();
+        terrain.heights.fill(ground);
+        let mid = tile_size() * 0.5;
+        probe_tile(Some(&ts), Some(&terrain), (0, 0), mid, mid, top).below
+    };
+    let near = |got: Option<f64>, want: f64| got.is_some_and(|z| (z - want).abs() < 1e-3);
+    // #208: ground at 0.10 over the pavement's top at -0.67
+    let got = probe_over(-0.67, 0.1, 1.5, false);
+    assert!(near(got, 0.1), "{got:?}");
+    // the ground a few centimetres through the asphalt is still the road
+    let got = probe_over(0.0, 0.05, 1.5, false);
+    assert!(near(got, 0.0), "{got:?}");
+    // half way through the ramp: half way up, no step
+    let got = probe_over(0.0, 0.15, 1.5, false);
+    assert!(near(got, 0.075), "{got:?}");
+    // ground cut away over the road is not drawn: the road carries
+    let got = probe_over(-0.67, 0.1, 1.5, true);
+    assert!(near(got, -0.67), "{got:?}");
+    // ground over the wheel (a road under an embankment) is no floor
+    let got = probe_over(0.0, 4.0, 1.5, false);
+    assert!(near(got, 0.0), "{got:?}");
 }

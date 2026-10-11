@@ -109,6 +109,9 @@ pub struct Instance {
     pub casts_shadow: bool,
     pub roof: Option<f32>,
     pub ordered: bool,
+    /// Position in a model's authored mesh order when `ordered` is set. This must not
+    /// depend on the scene instance id: vehicle instances are recycled after despawn.
+    pub ordered_index: u32,
 }
 
 impl Instance {
@@ -124,6 +127,7 @@ pub struct Scene {
     /// `update_texture`: what a script or HTML screen actually shows. light = alpha x brightest
     /// channel, alpha 0..1; colour = the lit pixels' mean hue, its brightest channel 1.
     pub tex_luma: std::sync::Mutex<std::collections::HashMap<TextureId, (f32, f32, [f32; 3])>>,
+    pub(crate) uploaded: std::collections::HashMap<TextureId, (u64, Vec<u8>, bool)>,
     pub(crate) glass_slot: Option<TextureId>,
     pub materials: Vec<Material>,
     pub instances: Vec<Instance>,
@@ -152,6 +156,9 @@ pub struct Scene {
     pub(crate) sky_bind_group: Option<wgpu::BindGroup>,
     pub overlays: Vec<(TextureId, [f32; 4])>,
     pub premultiplied: std::collections::HashSet<TextureId>,
+    /// Overlays with these textures are drawn over a blurred copy of what lies beneath
+    /// them, rounded at the corners by the radius given (pixels).
+    pub frosted: HashMap<TextureId, f32>,
     pub(crate) overlay_res: Vec<(TextureId, wgpu::Buffer, wgpu::BindGroup, [f32; 8])>,
     pub(crate) dirty: bool,
     pub(crate) uploaded_instances: usize,
@@ -163,7 +170,7 @@ pub struct Scene {
     pub(crate) bounds_dirty: bool,
     pub(crate) cpu_models: Vec<[[f32; 4]; 4]>,
     pub(crate) cpu_params: Vec<[f32; 4]>,
-    pub(crate) last_grid: Vec<u32>,
+    pub(crate) light_grid: LightGrid,
     pub(crate) last_lights: Vec<u8>,
     pub(crate) bind_groups: HashMap<BindKey, (wgpu::BindGroup, wgpu::Buffer)>,
     pub pbr_maps: HashMap<TextureId, PbrMaps>,

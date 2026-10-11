@@ -353,7 +353,7 @@ impl Schedule {
                 .filter(|&t| t > day_time);
             let n_stops = stops.len();
             traffic.reroute(ci, route, s0, stops, layover);
-            let line = self.display_line(i);
+            let line = bus_line(&self.data.trips[self.departures[i].trip]);
             let terminus = self.data.trips[self.departures[i].trip].terminus.clone();
             let names = self.trip_stop_names(self.departures[i].trip);
             let last_stop = trip_stations(&self.data.trips[self.departures[i].trip])
@@ -539,17 +539,7 @@ impl Schedule {
             .filter(|&&(ri, ss, ..)| track && departure > day_time && (ri > 0 || ss - s >= 2.0))
             .map(|&(ri, ss, _, t, ..)| routing::stand_leave(traffic.net(), &route, s, (ri, ss), t))
             .filter(|&t| t > day_time);
-        // the trip's own line (" 5"), which is what the displays show; the timetable line's
-        // name ("5 & 5N") only groups the tours
-        let trip_line = self.data.trips[self.departures[i].trip]
-            .line
-            .trim()
-            .to_string();
-        let line = if trip_line.is_empty() {
-            self.departures[i].line.clone()
-        } else {
-            trip_line
-        };
+        let line = bus_line(&self.data.trips[self.departures[i].trip]);
         let tour = self.departures[i].tour.clone();
         let terminus = self.data.trips[self.departures[i].trip].terminus.clone();
         let ci = match traffic.spawn_bus(

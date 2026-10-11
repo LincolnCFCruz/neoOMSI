@@ -44,7 +44,6 @@ pub struct Renderer {
     pub(crate) cloud_detail_view: wgpu::TextureView,
     pub(crate) cloud_sampler: wgpu::Sampler,
     pub(crate) sky_mesh: (wgpu::Buffer, wgpu::Buffer, u32),
-    pub(crate) overlay_pipeline: wgpu::RenderPipeline,
     pub(crate) overlay_layout: wgpu::BindGroupLayout,
     pub(crate) sampler: wgpu::Sampler,
     pub(crate) camera_buf: wgpu::Buffer,
@@ -98,6 +97,8 @@ pub struct Renderer {
     pub(crate) last_frame: Option<std::time::Instant>,
     pub instant_exposure: bool,
     pub(crate) overlay_pipeline_1x: wgpu::RenderPipeline,
+    /// The frosted backdrops of overlays, made when one is first wanted.
+    pub(crate) frost: Option<Frost>,
     pub(crate) xr_ui_pipeline: wgpu::RenderPipeline,
     pub(crate) started: std::time::Instant,
     pub(crate) clamp_sampler: wgpu::Sampler,
@@ -141,10 +142,18 @@ pub struct Renderer {
     pub counts: std::cell::RefCell<std::collections::BTreeMap<&'static str, f64>>,
     pub(crate) profiling: bool,
     pub(crate) draw_audit_at: std::time::Instant,
-    pub(crate) encoding_pool: Option<rayon::ThreadPool>,
+    pub(crate) encoding_pool: Option<Arc<rayon::ThreadPool>>,
+    /// Encoders left for `present` to finish and submit on the submit thread, in the order
+    /// they are submitted (the navigator's, the mirrors', the window picture's).
+    pub(crate) queued: std::cell::RefCell<Vec<wgpu::CommandEncoder>>,
+    pub(crate) defer_next: std::cell::Cell<bool>,
+    pub(crate) defer_views: std::cell::Cell<bool>,
+    pub(crate) uploads: std::cell::RefCell<Uploads>,
     pub(crate) _device_poller: Option<DevicePoller>,
-    pub(crate) pending_meshes: std::cell::RefCell<Vec<(MeshId, Vec<Vertex>)>>,
+    pub(crate) pending_meshes: std::cell::RefCell<hashbrown::HashMap<MeshId, Vec<Vertex>>>,
     pub(crate) freed: std::cell::OnceCell<Freed>,
+    // (last: dropped after the rest, once the thread has submitted everything)
+    pub(crate) submitter: Option<Submitter>,
 }
 
 impl Renderer {

@@ -104,7 +104,7 @@ impl Traffic {
                     {
                         continue;
                     }
-                    let path = ::legacy_config::resolve_path(root, &v.file);
+                    let path = ::mods::resolve_path(root, &v.file);
                     match VehicleType::load_ai(root, &path) {
                         Ok(t) => {
                             // `[type]` 2 = rail (only as scheduled trains), 3 = aircraft on flight paths

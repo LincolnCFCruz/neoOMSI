@@ -68,7 +68,7 @@ pub(crate) fn world_pages(app: &App) -> Vec<Page> {
                 "noop".to_string(),
             ));
         } else {
-            match app.menu_edit.as_ref() {
+            match app.menu_edit.as_ref().filter(|_| !app.menu_edit_date) {
                 Some(d) => {
                     let mut c: Vec<char> = d.chars().collect();
                     c.resize(6, '_');
@@ -98,6 +98,40 @@ pub(crate) fn world_pages(app: &App) -> Vec<Page> {
                     ));
                 }
             }
+            match app.menu_edit.as_ref().filter(|_| app.menu_edit_date) {
+                Some(d) => {
+                    let mut c: Vec<char> = d.chars().collect();
+                    c.resize(8, '_');
+                    let typed = format!(
+                        "{}{}.{}{}.{}{}{}{}",
+                        c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7]
+                    );
+                    time.push((
+                        row(
+                            &tx("pause.world.text.exact_date"),
+                            'E',
+                            &typed,
+                            &tx("pause.world.text.press_enter_to_change_esc_to_cancel"),
+                            None,
+                        ),
+                        "date_edit".to_string(),
+                    ));
+                }
+                None => {
+                    let (d, m) = app.clock.day_month();
+                    let text = format!("{d:02}.{m:02}.{:04}", app.clock.year);
+                    time.push((
+                        row(
+                            &tx("pause.world.text.exact_date"),
+                            'e',
+                            &text,
+                            &tx("pause.world.text.change_the_current_date_press_enter_to_change"),
+                            None,
+                        ),
+                        "date_edit".to_string(),
+                    ));
+                }
+            }
             time.extend(slider_row(
                 Some(app),
                 "hour",
@@ -112,6 +146,19 @@ pub(crate) fn world_pages(app: &App) -> Vec<Page> {
                 &tx("pause.world.text.set_the_minute_directly"),
                 &|v| format!("{:02}", v as i64),
             ));
+            for (id, key, desc) in [
+                ("day", "day", "set_the_day_directly"),
+                ("month", "month", "set_the_month_directly"),
+                ("year", "year", "set_the_year_directly"),
+            ] {
+                time.extend(slider_row(
+                    Some(app),
+                    id,
+                    &tx(&format!("pause.world.text.{key}")),
+                    &tx(&format!("pause.world.text.{desc}")),
+                    &|v| format!("{}", v as i64),
+                ));
+            }
             for (name, hm, secs) in [
                 (&tx("pause.world.text.morning"), "06:00", 6 * 3600),
                 (&tx("pause.world.text.noon"), "12:00", 12 * 3600),

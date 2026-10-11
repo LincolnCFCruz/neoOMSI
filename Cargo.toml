@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "crates/legacy-config",
+    "crates/mods",
     "crates/config",
     "crates/logging",
     "crates/legacy-script",

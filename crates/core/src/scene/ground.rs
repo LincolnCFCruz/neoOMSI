@@ -81,13 +81,24 @@ pub(super) fn probe_tile(
             .unwrap_or(false);
         (h, cut)
     });
-    // ... unless that face lies buried well under ground that is drawn here and is under the
-    // wheel, not over it: the lower slope of an embankment spline (Marcel's `Damm1` falls
-    // 20 m over 30 m on each side) reaching under a junction the terrain carries. Omsi.exe
-    // takes the highest face there, the ground; taken as the road, it dropped the bus 8 m
-    // through the asphalt into the slope (Cotterell, the junction by the park at 250, 427).
-    let buried = matches!((probe.below, ground), (Some(z), Some((h, false))) if h <= top as f32 && h - z > BURIED_FACE);
-    let on_road = probe.below.is_some() && !buried;
+    // ... unless that face lies buried under ground that is drawn here and is under the
+    // wheel, not over it. Omsi.exe takes the highest face there, the ground; taken as the
+    // road, the bus dropped through the asphalt: 8 m into the lower slope of an embankment
+    // spline (Cotterell, the junction by the park at 250, 427), 0.77 m onto a pavement
+    // spline under a street the terrain carries (#208).
+    let buried = match (probe.below, ground) {
+        (Some(z), Some((h, false))) if h <= top as f32 => buried_share(h - z),
+        _ => 0.0,
+    };
+    // (partly buried: between the two, so that the wheel meets no step where the ground
+    // rises out of the road)
+    if buried > 0.0
+        && buried < 1.0
+        && let (Some(z), Some((h, _))) = (probe.below, ground)
+    {
+        probe.below = Some(z + (h - z) * buried);
+    }
+    let on_road = probe.below.is_some() && buried < 1.0;
     if let (Some((h, cut)), false) = (ground, on_road) {
         // the ground counts where it is drawn; where it is cut away and nothing else is
         // there (a surface without a collision), it still carries rather than let the
@@ -118,9 +129,19 @@ pub(super) fn probe_tile(
     }
 }
 
-/// How far a road face may lie under drawn ground before it counts as buried (m): far more
-/// than the ground poking through the asphalt that the road is there to keep out.
-pub(super) const BURIED_FACE: f32 = 1.0;
+/// How far a road face may lie under drawn ground and still be the road (m): the terrain
+/// grid is coarser than the road and pokes a few centimetres through the asphalt. A margin
+/// Omsi.exe does not have, to smooth those bumps away.
+pub(super) const BURIED_FACE: f32 = 0.1;
+
+/// Over how much more depth (m) a face goes from the road to buried (see [`buried_share`]).
+const BURIED_RAMP: f32 = 0.1;
+
+/// How much of the wheel's ground is the drawn ground over a road face `depth` under it:
+/// 0 within [`BURIED_FACE`], 1 from [`BURIED_RAMP`] deeper, in between linearly.
+fn buried_share(depth: f32) -> f32 {
+    ((depth - BURIED_FACE) / BURIED_RAMP).clamp(0.0, 1.0)
+}
 
 /// How far over the ground a wall's top must stand to be a wall to the wheels (a kerb is
 /// less, and the tyre climbs it).
@@ -360,7 +381,7 @@ impl World {
     ///
     /// The mask is stored like a picture (first row = north), the terrain mesh's v runs
     /// north with y, so the rows are turned over here.
-    pub(super) fn load_ground_paint(&self, tile_path: &Path) -> Vec<(usize, Image)> {
+    pub(crate) fn load_ground_paint(&self, tile_path: &Path) -> Vec<(usize, Image)> {
         let Some(name) = tile_path
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
@@ -370,7 +391,7 @@ impl World {
         let mut out = Vec::new();
         for layer in 1..self.global.ground_textures.len() {
             let path =
-                ::legacy_config::resolve_path(&self.map_dir, &format!("texture/map/{name}.{layer}.dds"));
+                ::mods::resolve_path(&self.map_dir, &format!("texture/map/{name}.{layer}.dds"));
             if !::legacy_config::vfs::is_file(&path) {
                 continue;
             }
