@@ -1946,7 +1946,13 @@ impl TrafficLightController {
             left -= d;
             let p = self.stops[k];
             let asked = self.request.get(p.light).copied().unwrap_or(false);
-            let active = if p.if_request { !asked } else { asked };
+            let mut active = if p.if_request { !asked } else { asked };
+            // A stop prolongs a usable phase while traffic is waiting.  It must not hold a
+            // changeover aspect: several UK programs place their stop marker during
+            // red-and-yellow, where holding it leaves the junction permanently in transition.
+            if p.jump_to.is_none() && Self::aspect(self.state(p.light)) == Aspect::RedYellow {
+                active = false;
+            }
             if !active {
                 self.passed = Some(k);
                 continue;
@@ -3432,6 +3438,26 @@ mod tests {
             left_green,
             "the extended green still reached yellow and red"
         );
+    }
+
+    #[test]
+    fn a_stop_does_not_hold_a_red_and_yellow_changeover() {
+        // Add-On London's Brixton Road lights have a demand stop one second into their
+        // red-and-yellow phase.  A queued vehicle must not be able to hold that transition
+        // forever: it still needs to receive the following green.
+        let mut c = TrafficLightController::from_program(
+            vec![(vec![(3, 3.0), (6, 33.0), (9, 2.0), (0, 1.0)], Some(0.0))],
+            Some(50.0),
+            &[[0.0, 1.0, 0.0]],
+            &[],
+        );
+        c.time = 0.9;
+        c.request[0] = true;
+
+        c.advance(0.2);
+        assert!(!c.held, "red-and-yellow changeover was held");
+        c.advance(2.0);
+        assert_eq!(c.state(0), 6, "the queued vehicle receives green");
     }
 
     #[test]
