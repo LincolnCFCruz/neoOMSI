@@ -2,6 +2,66 @@
 
 use super::*;
 
+#[test]
+fn direct_player_destination_runs_the_scheduled_target_trigger() {
+    let dir = std::env::temp_dir().join(format!(
+        "omsi-direct-destination-trigger-{}-{:?}",
+        std::process::id(),
+        std::thread::current().id()
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("test.bus"),
+        "[model]\nmodel.cfg\n[varnamelist]\n1\nvars.txt\n[script]\n1\nmain.osc\n",
+    )
+    .unwrap();
+    std::fs::write(dir.join("model.cfg"), "").unwrap();
+    std::fs::write(
+        dir.join("vars.txt"),
+        "destination_triggered\nAI_target_index\nIBIS_LinieKurs\nIBIS_Linie_Complex\nIBIS_Linie_Suffix\nIBIS_TerminusIndex\nIBIS_TerminusCode\nIBIS_RouteIndex\nIBIS_mode\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("main.osc"),
+        "{trigger:ai_scheduled_settarget}\n(L.L.IBIS_TerminusCode) (S.L.destination_triggered)\n{end}\n",
+    )
+    .unwrap();
+    let ty = std::sync::Arc::new(
+        ::simulation::VehicleType::load(&dir, &dir.join("test.bus")).unwrap(),
+    );
+    let mut vehicle =
+        ::simulation::VehicleInstance::new(ty, ::simulation::VehicleHost::new(Default::default()));
+    let hof = ::legacy_vehicle::Hof {
+        termini: vec![
+            ::legacy_vehicle::hof::Terminus {
+                code: 1,
+                texture_id: "Other".into(),
+                terminus_stop: Some("Other".into()),
+                all_exit: false,
+                strings: vec![],
+            },
+            ::legacy_vehicle::hof::Terminus {
+                code: 2,
+                texture_id: "Terminus".into(),
+                terminus_stop: Some("Terminus".into()),
+                all_exit: false,
+                strings: vec![],
+            },
+        ],
+        ..Default::default()
+    };
+
+    set_player_destination_directly(&mut vehicle, Some(&hof), "1", "Terminus", &[]);
+
+    // The trigger sees the state the normal direct-destination path writes, rather than
+    // replacing that path by returning early.
+    assert_eq!(vehicle.var("destination_triggered"), Some(2.0));
+    assert_eq!(vehicle.var("IBIS_TerminusIndex"), Some(1.0));
+    assert_eq!(vehicle.var("IBIS_TerminusCode"), Some(2.0));
+    assert_eq!(vehicle.var("IBIS_LinieKurs"), Some(1.0));
+    std::fs::remove_dir_all(dir).ok();
+}
+
 /// The row OMSI's AI bus is given: the first whose ident is the destination, whatever
 /// the codes' order; of equally loose matches the first as well.
 #[test]

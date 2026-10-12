@@ -11,6 +11,7 @@ mod menu;
 mod net;
 mod overlays;
 mod perf;
+mod style;
 mod types;
 mod util;
 mod vehicle_editor;
@@ -80,9 +81,14 @@ impl DevTools {
         ctx.set_log_filename(None);
         ctx.io_mut().backend_flags |= BackendFlags::RENDERER_HAS_VTX_OFFSET;
         ctx.style_mut().use_dark_colors();
+        style::apply(ctx.style_mut());
         let (font_size, font_rgba) = {
             let fonts = ctx.fonts();
-            fonts.add_font(&[imgui::FontSource::DefaultFontData { config: None }]);
+            fonts.add_font(&[imgui::FontSource::TtfData {
+                data: style::ROBOTO,
+                size_pixels: style::FONT_PX,
+                config: None,
+            }]);
             let tex = fonts.build_rgba32_texture();
             ((tex.width, tex.height), tex.data.to_vec())
         };

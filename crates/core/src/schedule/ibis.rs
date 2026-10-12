@@ -108,8 +108,9 @@ pub fn player_ibis(
     Some(::simulation::ibis::Typist::new(v, target, operable, background))
 }
 
-/// The player's IBIS set without typing: the IBIS variables written as the IBIS script
-/// would leave them.
+/// The player's IBIS set without typing, for example from the in-game destination list.
+/// OMSI still sets the scheduled target and fires its trigger here; vehicles such as the
+/// BP Gemini use that script callback to update their destination display.
 pub fn set_player_destination_directly(
     v: &mut ::simulation::VehicleInstance,
     hof: Option<&::legacy_vehicle::Hof>,
@@ -518,7 +519,7 @@ pub(super) fn set_destination(
     line: &str,
     terminus: &str,
     stops: &[&str],
-    player: bool,
+    direct_player: bool,
 ) {
     let Some(hof) = hof else { return };
     let terminus = terminus.trim();
@@ -557,7 +558,7 @@ pub(super) fn set_destination(
     };
     // the original's way: SetLineTo + AI_target_index, then the ai_scheduled_settarget trigger
     set_line_to(v, line);
-    if !player {
+    if !direct_player {
         v.set_var("AI_target_index", ti as f32);
         if v.trigger("ai_scheduled_settarget") {
             v.set_var(
@@ -599,4 +600,11 @@ pub(super) fn set_destination(
         "IBIS_terminus_texture",
         hof.termini[ti].texture_id.clone(),
     );
+    // A destination picked from the player's menu is not typed through the vehicle's
+    // electronics, so complete the normal IBIS state first.  The scheduled-target script
+    // can then consume that state for content which uses the callback to update its display.
+    if direct_player {
+        v.set_var("AI_target_index", ti as f32);
+        v.trigger("ai_scheduled_settarget");
+    }
 }

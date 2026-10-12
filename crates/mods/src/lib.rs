@@ -4,17 +4,32 @@ use std::sync::{Mutex, RwLock};
 
 mod layout;
 mod resolver;
-pub use layout::{Layer, ModEntry, ModKind, SHARED_DIR, discover, ensure_layout};
+pub use layout::{
+    Layer, ModEntry, ModKind, SHARED_DIR, discover, ensure_layout, folder_content_root,
+};
 pub use resolver::*;
 
 struct State {
     mods_dir: PathBuf,
     legacy: Option<PathBuf>,
     mods: Vec<ModEntry>,
+    mounts_complete: bool,
 }
 
 static STATE: RwLock<Option<State>> = RwLock::new(None);
 static REGISTERED: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
+
+fn mounts_are_current(
+    state: &State,
+    mods_dir: &Path,
+    legacy: &Option<PathBuf>,
+    mods: &[ModEntry],
+) -> bool {
+    state.mounts_complete
+        && state.mods_dir == mods_dir
+        && state.legacy == *legacy
+        && state.mods == mods
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Resolved {
@@ -27,6 +42,17 @@ pub fn init(mods_dir: &Path, legacy: Option<&Path>) -> std::io::Result<()> {
     let shared = mods_dir.join(SHARED_DIR);
     let legacy = legacy.map(Path::to_path_buf);
     let mods = discover(mods_dir);
+
+    // The launcher calls this from its regular content poll. Re-registering an unchanged
+    // layout remounts every mod and turns startup diagnostics into continuous log noise.
+    if STATE
+        .read()
+        .unwrap()
+        .as_ref()
+        .is_some_and(|state| mounts_are_current(state, mods_dir, &legacy, &mods))
+    {
+        return Ok(());
+    }
 
     // forget the previous registration
     for r in REGISTERED.lock().unwrap().drain(..) {
@@ -47,13 +73,15 @@ pub fn init(mods_dir: &Path, legacy: Option<&Path>) -> std::io::Result<()> {
     let mut tail = vec![shared.clone()];
     tail.extend(legacy.clone());
 
+    let mut mounts_complete = true;
     for m in &mods {
         let root = match m.kind {
-            ModKind::Folder => m.path.clone(),
+            ModKind::Folder => folder_content_root(&m.path),
             ModKind::Zip => match vfs::mount_zip(&m.path) {
                 Ok(mount) => mount,
                 Err(e) => {
                     log::warn!("mod {}: {e}", m.path.display());
+                    mounts_complete = false;
                     continue;
                 }
             },
@@ -72,6 +100,7 @@ pub fn init(mods_dir: &Path, legacy: Option<&Path>) -> std::io::Result<()> {
         mods_dir: mods_dir.to_path_buf(),
         legacy,
         mods,
+        mounts_complete,
     });
     Ok(())
 }
@@ -135,7 +164,7 @@ pub fn find(mod_name: Option<&str>, rel: &str) -> Option<Resolved> {
     if let Some(name) = mod_name {
         let m = mods.iter().find(|m| m.name.eq_ignore_ascii_case(name))?;
         let root = match m.kind {
-            ModKind::Folder => m.path.clone(),
+            ModKind::Folder => folder_content_root(&m.path),
             ModKind::Zip => m.path.clone(), // the mount point is the archive path
         };
         chain.push((root, Layer::Mod));
@@ -169,4 +198,35 @@ pub fn read(path: &Path) -> std::io::Result<Vec<u8>> {
 
 pub fn exists(path: &Path) -> bool {
     vfs::exists(path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn incomplete_mounts_are_retried_for_an_unchanged_layout() {
+        let dir = PathBuf::from("mods");
+        let state = State {
+            mods_dir: dir.clone(),
+            legacy: None,
+            mods: Vec::new(),
+            mounts_complete: false,
+        };
+
+        assert!(!mounts_are_current(&state, &dir, &None, &[]));
+    }
+
+    #[test]
+    fn complete_mounts_skip_an_unchanged_layout() {
+        let dir = PathBuf::from("mods");
+        let state = State {
+            mods_dir: dir.clone(),
+            legacy: None,
+            mods: Vec::new(),
+            mounts_complete: true,
+        };
+
+        assert!(mounts_are_current(&state, &dir, &None, &[]));
+    }
 }

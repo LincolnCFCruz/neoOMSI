@@ -583,6 +583,8 @@ impl Renderer {
         let debug_draws = ::legacy_config::env::var_os("OMSI_DEBUG_DRAWS").is_some();
         let debug_cull = ::legacy_config::env::var_os("OMSI_DEBUG_CULL").is_some();
         let mut list: Vec<u32> = Vec::new();
+        // (the shadow casters' entries go after the passes' own, see below)
+        let mut shadow_list: Vec<u32> = Vec::new();
         let mut items: Vec<DrawItem> = Vec::new();
         let mut shadow_batches: [Vec<Batch>; SHADOW_SETS] = std::array::from_fn(|_| Vec::new());
         let kind_of = |alpha: AlphaMode| -> u8 {
@@ -768,9 +770,34 @@ impl Renderer {
         if active.iter().any(|a| *a) {
             let n = scene.instances.len();
             let (parts, chunk) = split_parts(self.encoding_pool.as_deref(), n);
+            let chunk = chunk.div_ceil(CULL_BLOCK) * CULL_BLOCK;
+            // (blocks outside every sun box are passed by - the boxes are parallel
+            // projections, so a block's sphere outside them holds no caster; with a
+            // spotlight's map to draw every block is looked through)
+            let blocks = Self::cull_blocks(scene).filter(|_| spot_cull.is_empty());
+            let lit = |b: usize| {
+                let Some(bl) = blocks.as_ref() else {
+                    return true;
+                };
+                let (c, r) = bl[b];
+                boxes.iter().enumerate().any(|(k, &(range, lvp, _))| {
+                    let lc = lvp.project_point3(c);
+                    let rr = r / range;
+                    active[k] && lc.x.abs() <= 1.0 + rr && lc.y.abs() <= 1.0 + rr
+                })
+            };
             let mut found: [Vec<DrawItem>; SHADOW_SETS] = std::array::from_fn(|_| Vec::new());
             for part in run_parts(self.encoding_pool.as_deref(), parts, |p| {
-                casters(p * chunk..((p + 1) * chunk).min(n))
+                let mut out: [Vec<DrawItem>; SHADOW_SETS] = std::array::from_fn(|_| Vec::new());
+                let end = ((p + 1) * chunk).min(n);
+                for b in (p * chunk..end).step_by(CULL_BLOCK) {
+                    if lit(b / CULL_BLOCK) {
+                        for (a, x) in out.iter_mut().zip(casters(b..(b + CULL_BLOCK).min(end))) {
+                            a.extend(x);
+                        }
+                    }
+                }
+                out
             }) {
                 for (a, b) in found.iter_mut().zip(part) {
                     a.extend(b);
@@ -787,7 +814,7 @@ impl Renderer {
                     scene,
                     &mut found[cascade],
                     true,
-                    &mut list,
+                    &mut shadow_list,
                     &mut shadow_batches[cascade],
                 );
             }
@@ -886,8 +913,9 @@ impl Renderer {
         };
         let cull_one = |i: usize, sizes: &mut Vec<([u64; 4], f32)>| -> Option<(usize, f32, bool)> {
             let inst = &scene.instances[i];
-            let m = &scene.meshes[inst.mesh];
-            if m.ranges.is_empty() || !inst.visible || (inst.mirror_only && main_view) {
+            // (the mesh only for what passes the view: looked up first, for every one of
+            // the scene's objects, it was much of the culling's time)
+            if !inst.visible || (inst.mirror_only && main_view) {
                 return None;
             }
             if let Some([x0, y0, x1, y1]) = inst.near_only {
@@ -910,6 +938,10 @@ impl Renderer {
                 return None;
             }
             if !inside && (v.x.abs() > z * tan_x + r / cos_x || v.y.abs() > z * tan_y + r / cos_y) {
+                return None;
+            }
+            let m = &scene.meshes[inst.mesh];
+            if m.ranges.is_empty() {
                 return None;
             }
             let size = if inst.object_radius > 0.0 {
@@ -990,13 +1022,36 @@ impl Renderer {
         };
         let n = scene.instances.len();
         let (parts, chunk) = split_parts(self.encoding_pool.as_deref(), n);
+        // (whole blocks of instances out of the view are passed by: a block's sphere holds
+        // its instances' spheres, so none of them would pass the tests of `cull_one`)
+        let chunk = chunk.div_ceil(CULL_BLOCK) * CULL_BLOCK;
+        let blocks = Self::cull_blocks(scene);
+        let block_seen = |b: usize| {
+            let Some(bl) = blocks.as_ref() else {
+                return true;
+            };
+            let (c, r) = bl[b];
+            let v = view.transform_point3(c);
+            let z = -v.z;
+            v.length() <= r
+                || !(z + r < camera.near
+                    || (!enhanced_frame && z - r > fog_far)
+                    || v.x.abs() > z * tan_x + r / cos_x
+                    || v.y.abs() > z * tan_y + r / cos_y)
+        };
         let (mut visible, mut found): (Vec<(usize, f32, bool)>, Vec<([u64; 4], f32)>) =
             (Vec::new(), Vec::new());
         for (v, sizes) in run_parts(self.encoding_pool.as_deref(), parts, |p| {
             let mut sizes = Vec::new();
-            let v: Vec<_> = (p * chunk..((p + 1) * chunk).min(n))
-                .filter_map(|i| cull_one(i, &mut sizes))
-                .collect();
+            let mut v = Vec::new();
+            let end = ((p + 1) * chunk).min(n);
+            for b in (p * chunk..end).step_by(CULL_BLOCK) {
+                if block_seen(b / CULL_BLOCK) {
+                    v.extend(
+                        (b..(b + CULL_BLOCK).min(end)).filter_map(|i| cull_one(i, &mut sizes)),
+                    );
+                }
+            }
             (v, sizes)
         }) {
             visible.extend(v);
@@ -1312,6 +1367,13 @@ impl Renderer {
             list.extend(pre_list);
             prepass_batches = pre_batches;
         }
+        // (the shadow casters' entries after the passes' own: the main pass's batches keep
+        // their places in the list while only the shadows change, and its bundles are kept)
+        let offset = list.len() as u32;
+        for b in shadow_batches.iter_mut().flatten() {
+            b.instances = b.instances.start + offset..b.instances.end + offset;
+        }
+        list.extend_from_slice(&shadow_list);
         if let Ok(skip) = ::legacy_config::env::var("OMSI_SKIP_PIPE") {
             let skip: Vec<u8> = skip
                 .split(',')
@@ -1411,6 +1473,7 @@ impl Renderer {
                 scene.camera_bind_group.as_ref().expect("camera bind group"),
                 format,
                 self.options.msaa,
+                with_overlays.then_some(&self.main_bundles),
             )
         } else {
             Vec::new()
@@ -1498,7 +1561,33 @@ impl Renderer {
                 });
             }
         }
+        // (all of the frame's spotlight maps in one pass, each in its own tile: a pass of its
+        // own for each - up to 16 a frame, each loading and storing the whole far map - cost
+        // the card more than drawing them)
+        let mut spot_pass = spot_draws
+            .iter()
+            .any(|&(k, _)| scene.spot_bind_groups.get(k).is_some())
+            .then(|| {
+                shadow_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("spot shadow"),
+                    color_attachments: &[],
+                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                        view: &self.shadow_view_far,
+                        depth_ops: Some(wgpu::Operations {
+                            load: wgpu::LoadOp::Load,
+                            store: wgpu::StoreOp::Store,
+                        }),
+                        stencil_ops: None,
+                    }),
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                    multiview_mask: None,
+                })
+            });
         for &(k, pose) in &spot_draws {
+            let Some(pass) = spot_pass.as_mut() else {
+                break;
+            };
             let Some(bg) = scene.spot_bind_groups.get(k) else {
                 continue;
             };
@@ -1515,29 +1604,22 @@ impl Renderer {
             let tile = self.spot_tile;
             let x = (k as u32 % 4) * tile;
             let y = self.options.shadow_size + (k as u32 / 4) * tile;
-            let mut pass = shadow_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("spot shadow"),
-                color_attachments: &[],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.shadow_view_far,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: wgpu::StoreOp::Store,
-                    }),
-                    stencil_ops: None,
-                }),
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
             pass.set_viewport(x as f32, y as f32, tile as f32, tile as f32, 0.0, 1.0);
             pass.set_scissor_rect(x, y, tile, tile);
             pass.set_pipeline(&self.shadow_clear_pipeline);
             pass.draw(0..3, 0..1);
             pass.set_bind_group(0, bg, &[]);
-            encode_batches(&mut pass, scene, &shadow_batches[3 + k], |pipe| {
+            encode_batches(pass, scene, &shadow_batches[3 + k], |pipe| {
                 &self.shadow_pipelines[pipe as usize]
             });
+        }
+        drop(spot_pass);
+        let single = self.options.msaa <= 1;
+        let share_depth =
+            prepass_on && single && self.ao.is_some() && !has_presurface && !puddles_wanted;
+        // A shared depth gets glass drawn into it, so the glass snapshot reads a copy.
+        if glass_on && share_depth {
+            self.prepare_glass_depth(width, height);
         }
         if prepass_on {
             let proj = glam::camera::rh::proj::directx::perspective(
@@ -1604,6 +1686,14 @@ impl Renderer {
                 pass.set_pipeline(pipe);
                 pass.set_bind_group(0, bg, &[]);
                 pass.draw(0..3, 0..1);
+            }
+            if glass_on && share_depth {
+                let copy = self.glass_depth.as_ref().unwrap().texture();
+                prepass_encoder.copy_texture_to_texture(
+                    ao.depth_view.texture().as_image_copy(),
+                    copy.as_image_copy(),
+                    copy.size(),
+                );
             }
         }
         if enhanced && (lead_view || probe_redraw) {
@@ -1729,9 +1819,6 @@ impl Renderer {
                 }
             }
         }
-        let single = self.options.msaa <= 1;
-        let share_depth =
-            prepass_on && single && self.ao.is_some() && !has_presurface && !puddles_wanted;
         let targets = if share_depth {
             None
         } else {
@@ -2047,14 +2134,21 @@ impl Renderer {
                     .filter(|_| puddles_on)
                     .map_or(&h.view, |p| &p.view)
             });
+            let ao_depth = &self.ao.as_ref().unwrap().depth_view;
+            let depth = self
+                .glass_depth
+                .as_ref()
+                .filter(|_| share_depth)
+                .unwrap_or(ao_depth);
             if self
                 .glass_snapshot_source
                 .as_ref()
-                .is_none_or(|(source, _)| source != view)
+                .is_none_or(|(source, d, _)| source != view || d != depth)
             {
-                self.glass_snapshot_source = Some((view.clone(), self.picture_group(view)));
+                let bg = self.glass_snapshot_group(view, depth);
+                self.glass_snapshot_source = Some((view.clone(), depth.clone(), bg));
             }
-            let (_, bg) = self.glass_snapshot_source.as_ref().unwrap();
+            let (_, _, bg) = self.glass_snapshot_source.as_ref().unwrap();
             let behind = self.glass_picture.as_ref().unwrap();
             {
                 let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
